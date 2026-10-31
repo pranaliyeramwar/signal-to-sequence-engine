@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets and local configuration
+.env
+.streamlit/secrets.toml
+
+# Generated scoring output (recreate with: python -m scoring)
+data/output/
+# CSV reports and exports downloaded from the Streamlit app into the project
+scored_companies*.csv
+sequence_drafts_*.csv
+sequencing_import_*.csv
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+.idea/

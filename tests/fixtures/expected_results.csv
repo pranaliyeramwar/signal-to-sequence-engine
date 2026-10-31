@@ -1,0 +1,26 @@
+company_id,saas_fit_status,size_status,sales_function_status,hiring_status,outbound_status,icp_score,potential_score,icp_outcome,contact_readiness,campaign_trigger_status,campaign_readiness
+SYN-001,confirmed,confirmed_in_range,present,current,strong,100,100,Qualified,Ready,hiring,Ready to Sequence
+SYN-002,confirmed,single_source,present,current,moderate,77,97,Review,Ready,hiring,Hold: ICP Review
+SYN-003,confirmed,confirmed_in_range,unknown,confirmed_none,strong,60,80,Review,Needs Attention,none,Hold: ICP Review
+SYN-004,unclear,confirmed_out_of_range,unknown,confirmed_none,none,0,50,Disqualified,Ready,none,Excluded
+SYN-005,unclear,confirmed_out_of_range,unknown,current,weak,23,73,Disqualified,Not Ready,hiring,Excluded
+SYN-006,confirmed,confirmed_out_of_range,unknown,current,strong,60,80,Disqualified,Ready,hiring,Excluded
+SYN-007,confirmed,confirmed_out_of_range,unknown,date_missing,moderate,37,77,Disqualified,Ready,none,Excluded
+SYN-008,confirmed,conflict,unknown,current,strong,60,100,Review,Ready,hiring,Hold: ICP Review
+SYN-009,confirmed,conflict,confirmed_absent,confirmed_none,weak,33,53,Disqualified,Ready,none,Excluded
+SYN-010,confirmed,unknown,present,current,moderate,77,97,Review,Ready,hiring,Hold: ICP Review
+SYN-011,unknown,confirmed_in_range,unknown,current,strong,50,100,Review,Ready,hiring,Hold: ICP Review
+SYN-012,confirmed,confirmed_in_range,unknown,role_unverified,strong,60,100,Review,Ready,none,Hold: ICP Review
+SYN-013,confirmed,confirmed_in_range,present,stale,moderate,77,97,Qualified,Ready,documented,Ready to Sequence
+SYN-014,confirmed,confirmed_in_range,unknown,unknown,none,50,90,Review,Not Ready,none,Hold: ICP Review
+SYN-015,unclear,confirmed_in_range,unknown,current,weak,43,93,Review,Not Ready,hiring,Hold: ICP Review
+SYN-016,confirmed,confirmed_in_range,confirmed_absent,confirmed_none,none,50,50,Review,Needs Attention,none,Hold: ICP Review
+SYN-017,not_saas,confirmed_in_range,present,current,strong,70,70,Disqualified,Not Ready,hiring,Excluded
+SYN-018,confirmed,confirmed_in_range,present,current,moderate,97,97,Qualified,Ready,hiring,Ready to Sequence
+SYN-019,confirmed,confirmed_in_range,unknown,current,moderate,77,97,Qualified,Needs Attention,hiring,Hold: Contact
+SYN-020,confirmed,confirmed_in_range,unknown,current,strong,80,100,Qualified,Needs Attention,hiring,Hold: Contact
+SYN-021,unknown,single_source,unknown,titles_missing,none,0,90,Review,Not Ready,none,Hold: ICP Review
+SYN-022,unclear,confirmed_out_of_range,unknown,confirmed_none,weak,3,53,Disqualified,Ready,none,Excluded
+SYN-023,confirmed,confirmed_in_range,present,confirmed_none,strong,80,80,Qualified,Ready,none,Hold: Trigger Research
+SYN-024,unknown,single_source,unknown,current,unknown,20,100,Review,Ready,hiring,Hold: ICP Review
+SYN-025,confirmed,conflict,unknown,current,strong,60,100,Review,Ready,hiring,Hold: ICP Review

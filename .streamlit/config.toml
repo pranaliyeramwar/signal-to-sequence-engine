@@ -1,0 +1,9 @@
+# Project Streamlit configuration. Read when the app is launched from the project root.
+
+[server]
+# Listen on the loopback interface only, so the app is reachable from this computer and not from the network.
+address = "127.0.0.1"
+
+[browser]
+# Do not send usage statistics to Streamlit.
+gatherUsageStats = false
