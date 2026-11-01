@@ -29,7 +29,7 @@ If **any** record in the batch is blocked, nothing is exported. The function rai
 
 ## Requirements
 
-- Python 3.10+ (developed and tested on 3.15.1)
+- Python 3.11+ for the complete project and test suite (developed and tested on 3.15.1). The tests read `.streamlit/config.toml` with the standard-library `tomllib` module, which was added in Python 3.11.
 - **The engine, CLI and tests:** no third-party packages. Tests use the standard-library `unittest`.
 - **The web interface only:** Streamlit, listed in [`requirements.txt`](requirements.txt). Install it into a project virtual environment rather than your global Python (see below).
 
@@ -72,14 +72,24 @@ It runs at <http://127.0.0.1:8501>. Stop it with `Ctrl+C`.
 
 **Localhost only.** [`.streamlit/config.toml`](.streamlit/config.toml) sets `server.address = "127.0.0.1"`, so the app listens on this computer's loopback interface and can't be reached from your network. It also turns off Streamlit usage statistics. Streamlit's XSRF and CORS protections stay at their enabled defaults. Streamlit reads this file only when launched **from the project root**. If you launch it from elsewhere, add `--server.address 127.0.0.1`. To confirm the binding, check that the startup message shows a single `http://127.0.0.1:8501` URL and no "Network URL".
 
-The app has two tabs.
-
-**ICP & Account Intelligence**
+**Sidebar:**
 
 - upload a company CSV, or load the synthetic sample dataset
-- preview the data
-- run the scoring engine
-- see ICP, campaign and contact metrics
+- set the "Assess as of" reference date
+- enter sender settings for the Sequence Builder
+
+The app has three tabs. **Run ICP scoring** sits above the tabs and feeds all three.
+
+**Dashboard**
+
+- a read-only GTM operations view
+- KPI cards, distribution charts, an ICP score histogram and a prioritised account table
+- see [Dashboard](#dashboard) below
+
+**ICP & Account Intelligence** (account intelligence and scoring results)
+
+- preview the loaded data
+- see ICP, campaign and contact counts from the latest scoring run
 - search and filter the results
 - inspect one company's score breakdown, flags and reasons, and its first-touch email preview
 - download the scored CSV
@@ -111,9 +121,69 @@ See [Sequence Builder](#sequence-builder) below.
   - `scored_companies_UNVERIFIED.csv` if any record is unverified
   - `scored_companies.csv` otherwise
 
+## Dashboard
+
+The first tab summarises the **existing assessment results**. It doesn't score, reclassify or rank anything itself. All of its calculations are in [`ui/dashboard.py`](ui/dashboard.py), which reads the engine's output fields and reuses the same counting helper and outcome lists as the rest of the app.
+
+**Filters:** ICP classification, contact readiness, campaign readiness and an ICP score range. The range includes both ends, and a record without a valid score drops out only when the range is narrowed. The filters sit in one row above everything they apply to, and the KPI cards, charts and table all use the same filtered set. Filtering builds a new list, so it never changes the scored results, the drafts or anything the exports use.
+
+**KPI cards:**
+
+- Total Companies Analysed
+- Qualified Accounts
+- Accounts Under Review
+- Disqualified Accounts
+- Contacts Ready
+- Campaigns Ready to Sequence (a readiness status, not a launched campaign)
+
+**Charts:** ICP classification, contact readiness and campaign readiness distributions, plus an ICP score histogram in 10-point bins.
+
+- Each chart is a single series in the accent colour.
+- Categories stay in the engine's fixed order, including zero counts, so filtering never reorders or recolours them.
+- Each bar has its value printed at its tip, a tooltip, and a **View as table** twin. The accent is 2.97:1 against white, so values are never shown by colour alone.
+- The histogram marks the engine's Review (40) and Qualified (70) thresholds. Its caption notes that a score of 70+ is Qualified only when no blocking flag applies.
+
+**Prioritised accounts:** ordered by campaign readiness (Ready to Sequence first, Excluded last), then ICP score, then company ID. This only orders the list; it changes no classification.
+
+**Data integrity:**
+
+- Synthetic data is labelled DEMO DATA, and unverified data UNVERIFIED.
+- The dashboard shows assessment counts only. There are no revenue, pipeline, conversion, engagement or campaign-performance figures.
+- Before scoring, with an empty dataset, or when the filters match nothing, it shows a message instead of empty charts.
+
+### Visual theme
+
+Set in [`.streamlit/config.toml`](.streamlit/config.toml) using Streamlit's built-in theming. The `[server]` and `[browser]` settings are unchanged: localhost only, usage statistics off.
+
+| Role | Colour |
+|---|---|
+| Primary: buttons, tabs, headings, threshold lines | `#173B4D` deep teal-blue |
+| Accent: chart marks, highlights, active indicators | `#19A7A0` aqua teal |
+| Page background | `#F5F8FA` |
+| Cards, panels, sidebar background, main-area inputs | `#FFFFFF` |
+| Sidebar inputs | `#F5F8FA` |
+| Text | `#243746` |
+| Muted chart axis text | `#64748B` |
+| Borders | `#DCE5EA` |
+
+- **Theme scope:** light theme only.
+- **Brand styling** lives in [`ui/style.py`](ui/style.py): the palette constants (shared with the charts) and one fixed stylesheet with no user data. It adds:
+  - a deep teal-blue header band with an aqua edge
+  - uppercase sidebar section headings with aqua rules, and a sidebar border and shadow
+  - deep teal-blue headings with an aqua bar on section headings
+  - bold active tab text with an aqua underline
+  - aqua-tinted filter chips and a hover state on secondary buttons
+  - white KPI and chart cards with an aqua top edge (the Ready to Sequence KPI card is aqua-tinted)
+  - aqua-tinted Ready to Sequence rows in the prioritised table (applied with a pandas Styler)
+- **Selectors:**
+  - Mostly Streamlit's documented `st.container(key=…)` classes, plus `data-testid` and ARIA attributes.
+  - Two hooks are marked less stable in the stylesheet: the tab underline and the filter chips. If a Streamlit upgrade renames them, those elements fall back to the theme colours.
+- **Contrast:** every text colour pair is at least 6.4:1, and tests check that each pair meets WCAG AA (4.5:1). Aqua is used only for non-text accents, and always next to text that carries the same meaning.
+- **Status colours:** Streamlit's own success, warning and error colours are left as they are, so status never depends on the brand colours. Every status also carries text and an icon.
+
 ## Sequence Builder
 
-The second tab turns assessment results into **first-touch email drafts for human review**.
+The third tab turns assessment results into **first-touch email drafts for human review**.
 
 - **Which records appear:**
   - **Qualified** companies are shown by default.
@@ -214,6 +284,17 @@ All four use the same implementation in [`ui/csv_safety.py`](ui/csv_safety.py). 
 
 - **Side effect:** a legitimate value that starts with one of these characters keeps the leading `'` when it's imported into another tool.
 
+## Limitations and Scope
+
+- **Rule-based scoring.** Scoring uses deterministic, keyword-based rules (`scoring/rules.py`). It doesn't use a model or AI service, so a description that describes the company in words the keyword lists don't cover can be marked unclear or unknown.
+- **Session-only workflow.** Drafts, approvals and sender settings live in the browser session. They're never saved to disk and may be lost when the tab is refreshed or the server restarts. Download a Draft Review CSV to keep a copy.
+- **Single user, localhost only.** The app is configured to listen on `127.0.0.1` only. It has no accounts, sign-in or shared state, and isn't intended to be deployed to a server.
+- **Synthetic data only.** The project has been tested with synthetic data only. It hasn't been validated on real prospect data.
+- **No live data enrichment.** The engine assesses only the fields in the input CSV. It doesn't look up companies, contacts, hiring or triggers from any external source.
+- **No sending.** The application never sends email or launches campaigns. Its only outputs are CSV files.
+- **Review records can't be approved.** They can be drafted and edited in the Sequence Builder, but never approved or exported for sequencing.
+- **Two internal Streamlit selectors.** The theme's tab underline and filter-chip styling rely on Streamlit internal CSS hooks that may need updating after a Streamlit upgrade. If they stop matching, those elements fall back to the theme colours.
+
 ## How scoring works
 
 The ICP score is out of 100 points:
@@ -276,11 +357,14 @@ scripts/
 ui/
   helpers.py                      # upload parsing, column checks, labels, filters (no Streamlit import)
   csv_safety.py                   # formula-injection neutralisation for every CSV file (CLI and app)
+  dashboard.py                    # dashboard filters, KPIs, distributions, histogram, priority order (no Streamlit)
+  charts.py                       # Altair chart builders for the dashboard (app only)
+  style.py                        # brand palette, app stylesheet, priority-row highlight
 outreach/
   first_touch.py                  # deterministic, evidence-based first-touch drafts (no Streamlit import)
   sequence.py                     # drafts, approval, filters, Draft Review and Sequencing CSV exports
-streamlit_app.py                  # Streamlit web interface (two tabs)
-.streamlit/config.toml            # binds the app to 127.0.0.1; usage statistics off
+streamlit_app.py                  # Streamlit web interface (three tabs)
+.streamlit/config.toml            # binds the app to 127.0.0.1; usage statistics off; brand theme
 requirements.txt                  # web interface dependency (Streamlit)
 tests/
   fixtures/expected_results.csv   # hand-derived expected outcomes
@@ -291,6 +375,8 @@ tests/
   test_first_touch.py             # evidence rules and draft generation
   test_sequence_builder.py        # approval, sender changes, filters, both exports, guard
   test_csv_safety.py              # formula-injection protection; localhost-only server config
+  test_dashboard.py               # dashboard calculations, filters, no mutation, theme/security config
+  test_style.py                   # palette, stylesheet, contrast, priority-row highlight
 .gitignore                        # excludes .venv, caches, secrets and generated output
 ```
 

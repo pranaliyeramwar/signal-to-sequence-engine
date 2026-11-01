@@ -13,6 +13,10 @@ env/
 
 # Secrets and local configuration
 .env
+.env.*
+# Template files with no real values may be committed
+!.env.example
+!.env.sample
 .streamlit/secrets.toml
 
 # Generated scoring output (recreate with: python -m scoring)

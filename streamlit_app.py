@@ -2,7 +2,8 @@
 
 Run: .venv\\Scripts\\python.exe -m streamlit run streamlit_app.py
 
-Two tabs: "ICP & Account Intelligence" (assessment) and "Sequence Builder" (first-touch drafts).
+Three tabs: "Dashboard" (read-only GTM view), "ICP & Account Intelligence" (assessment) and
+"Sequence Builder" (first-touch drafts).
 This app never sends email or launches campaigns. Scoring is done by the scoring package; drafting
 and export rules live in the outreach package. The Sequencing CSV is the only import-ready file and
 every row in it has passed scoring.sequencing_export(), the fail-closed guard.
@@ -16,7 +17,8 @@ import streamlit as st
 
 from outreach import sequence as seq
 from outreach.first_touch import BODY_MAX_WORDS, BODY_MIN_WORDS, RESEARCH_NOTE, SenderSettings
-from ui import helpers
+from scoring.rules import QUALIFIED_MIN, REVIEW_MIN
+from ui import charts, dashboard, helpers, style
 
 SAMPLE_PATH = Path(__file__).resolve().parent / "data" / "input" / "sample_companies.csv"
 SAMPLE_AS_OF = date(2026, 10, 30)
@@ -27,6 +29,10 @@ WORKFLOW_STATE = ("drafts", "selected", "sender_applied", "sender_notice", "edit
 DRAFT_WIDGET_PREFIXES = ("subject::", "body::", "reason::")
 
 st.set_page_config(page_title="Signal-to-Sequence Engine", layout="wide")
+
+# Theme colours come from .streamlit/config.toml; ui/style.py adds the brand styling. The stylesheet is a
+# fixed string built from palette constants and contains no user data.
+st.markdown(style.app_css(), unsafe_allow_html=True)
 
 
 def clear_draft_widgets(keys=None):
@@ -85,8 +91,8 @@ with st.sidebar:
 sender = SenderSettings(st.session_state.get("sender_name", ""), st.session_state.get("sender_value", ""),
                         st.session_state.get("sender_cta", ""))
 
-st.title("Signal-to-Sequence Engine")
-st.caption("Company ICP qualification · Contact readiness · Campaign readiness · First-touch drafts")
+with st.container(key=style.HEADER_KEY):
+    st.markdown(style.HEADER_HTML, unsafe_allow_html=True)       # fixed text only, no user data
 
 source = st.session_state.get("source")
 if source is None:
@@ -126,7 +132,19 @@ if unverified_count:
     st.warning(f"**UNVERIFIED:** {unverified_count} of {len(statuses)} records are not marked "
                "`is_synthetic=true` or `false`. Treat them as unverified, not as genuine prospects.")
 
-# ---- Draft workflow state (shared by both tabs) ----------------------------------------------
+# ---- Scoring (shared by every tab) -----------------------------------------------------------
+existing_drafts = st.session_state.get("drafts", {})
+touched = sum(1 for draft in existing_drafts.values() if draft.touched)
+if touched:
+    st.warning(f"Running scoring again will discard {touched} edited or reviewed draft(s) in the "
+               "Sequence Builder. Download a Draft Review CSV first if you want to keep them.")
+if st.button("Run ICP scoring", type="primary"):
+    clear_workflow()
+    st.session_state["results"] = helpers.score_rows(parsed.rows, as_of)
+    st.session_state["scored_as_of"] = as_of
+    st.rerun()
+
+# ---- Draft workflow state (shared by the tabs) -----------------------------------------------
 results = st.session_state.get("results")
 records, drafts, record_by_result = [], {}, {}
 if results is not None:
@@ -142,25 +160,95 @@ if results is not None:
     st.session_state["sender_applied"] = sender.normalised()
     seq.ensure_drafts(drafts, records, sender, scored_as_of)
 
-tab_icp, tab_builder = st.tabs(["ICP & Account Intelligence", "Sequence Builder"])
+tab_dashboard, tab_icp, tab_builder = st.tabs(["Dashboard", "ICP & Account Intelligence", "Sequence Builder"])
 
 # =============================================================================================
-# TAB 1: ICP & Account Intelligence
+# TAB: Dashboard (read-only view of the existing assessment results)
+# =============================================================================================
+with tab_dashboard:
+    st.subheader("GTM Operations Dashboard")
+    if results is None:
+        st.info("Run ICP scoring (above the tabs) to populate the dashboard.")
+    elif not results:
+        st.info("The scored dataset has no records.")
+    else:
+        kind, description = dashboard.dataset_label(results)
+        st.caption(f"{name} · scored as of {scored_as_of.isoformat()} · {description} Counts are assessment "
+                   "results from the scoring engine — not revenue, pipeline, engagement or campaign outcomes.")
+        if kind in ("synthetic", "mixed"):
+            st.error("🧪 **DEMO DATA.** These figures describe synthetic test records. No real prospects are "
+                     "shown and no campaign has been run.")
+        elif kind == "unverified":
+            st.warning("⚠ **UNVERIFIED DATA.** Some records are not marked `is_synthetic=false`; do not treat "
+                       "them as confirmed prospects.")
+
+        # One filter row above everything it scopes. Filters only select records for this view.
+        icp_col, contact_col, campaign_col, score_col = st.columns([1, 1, 1.3, 1.2])
+        dash_icp = icp_col.multiselect("ICP classification", helpers.ICP_OUTCOMES, key="dash_icp")
+        dash_contact = contact_col.multiselect("Contact readiness", helpers.CONTACT_OUTCOMES, key="dash_contact")
+        dash_campaign = campaign_col.multiselect("Campaign readiness", helpers.CAMPAIGN_OUTCOMES,
+                                                 key="dash_campaign")
+        dash_score = score_col.slider("ICP score range", dashboard.SCORE_MIN, dashboard.SCORE_MAX,
+                                      (dashboard.SCORE_MIN, dashboard.SCORE_MAX), key="dash_score")
+        view = dashboard.filter_dashboard(results, dash_icp, dash_contact, dash_campaign, dash_score)
+        filtered_note = "" if len(view) == len(results) else f" (filtered from {len(results)})"
+
+        values = dashboard.kpis(view)
+        suffix = " · test data" if kind in ("synthetic", "mixed") else ""
+        for row_start in (0, 3):
+            for column, (field, label) in zip(st.columns(3), dashboard.KPI_LABELS[row_start:row_start + 3]):
+                with column.container(key=style.card_key("kpi", field)):
+                    st.metric(label, values[field])
+                    if field == "total":
+                        st.caption(f"Matching the filters{filtered_note}{suffix}")
+                    elif field == "ready_to_sequence":
+                        st.caption(f"Readiness status, not a launched campaign{suffix}")
+                    else:
+                        share = values[field] / values["total"] if values["total"] else 0
+                        st.caption(f"{share:.0%} of shown companies{suffix}")
+
+        if not view:
+            st.info("No companies match the current filters. Widen the filters to see charts.")
+        else:
+            distributions = [
+                (dashboard.icp_distribution(view), "Company ICP classification", "ICP classification"),
+                (dashboard.contact_distribution(view), "Contact readiness", "Contact readiness"),
+                (dashboard.campaign_distribution(view), "Campaign readiness", "Campaign readiness"),
+            ]
+            chart_left, chart_right = st.columns(2)
+            for index, (rows, title, category) in enumerate(distributions):
+                with (chart_left if index % 2 == 0 else chart_right).container(key=style.card_key("chart", index)):
+                    st.altair_chart(charts.distribution_bar(rows, title, category), theme=None)
+                    with st.expander("View as table"):
+                        st.dataframe([{category: r["category"], "Companies": r["count"],
+                                       "Share": f"{r['share']:.0%}"} for r in rows], hide_index=True)
+            bins, missing = dashboard.score_histogram(view)
+            with chart_right.container(key=style.card_key("chart", "score")):
+                st.altair_chart(charts.score_histogram(bins), theme=None)
+                st.caption(f"Lines mark the engine's score thresholds: Review from {REVIEW_MIN} and Qualified "
+                           f"from {QUALIFIED_MIN}. A score of {QUALIFIED_MIN}+ is Qualified only when no blocking "
+                           "flag applies, and size or non-SaaS rules can disqualify at any score."
+                           + (f" {missing} record(s) without a valid score are not shown." if missing else ""))
+                with st.expander("View as table"):
+                    st.dataframe([{"ICP score": b["label"], "Companies": b["count"]} for b in bins],
+                                 hide_index=True)
+
+        st.markdown("##### Prioritised accounts")
+        st.caption("Ordered by campaign readiness (Ready to Sequence first), then ICP score. Ordering only; "
+                   "it does not change any classification.")
+        priority = pd.DataFrame(dashboard.prioritised_accounts(view), columns=dashboard.PRIORITY_COLUMNS)
+        st.dataframe(priority.style.apply(style.priority_row_style, axis=1), hide_index=True,
+                     column_config={"ICP score": st.column_config.ProgressColumn(
+                         "ICP score", min_value=0, max_value=100, format="%d", color=style.ACCENT)})
+        st.caption("Highlighted rows are Ready to Sequence (also stated in the Campaign readiness column).")
+
+# =============================================================================================
+# TAB: ICP & Account Intelligence
 # =============================================================================================
 with tab_icp:
     st.subheader("Uploaded data")
     st.caption(f"{name} · {len(parsed.rows)} records · showing the first {min(PREVIEW_ROWS, len(parsed.rows))}")
     st.dataframe(parsed.rows[:PREVIEW_ROWS], hide_index=True)
-
-    touched = sum(1 for draft in drafts.values() if draft.touched)
-    if touched:
-        st.warning(f"Running scoring again will discard {touched} edited or reviewed draft(s) in the "
-                   "Sequence Builder. Download a Draft Review CSV first if you want to keep them.")
-    if st.button("Run ICP scoring", type="primary"):
-        clear_workflow()
-        st.session_state["results"] = helpers.score_rows(parsed.rows, as_of)
-        st.session_state["scored_as_of"] = as_of
-        st.rerun()
 
     if results is None:
         st.info("Run ICP scoring to see results.")
@@ -175,20 +263,15 @@ with tab_icp:
         st.subheader(f"Results{label}")
         st.caption(f"Scored as of {scored_as_of.isoformat()} · {len(results)} records")
 
-        st.markdown("**Company ICP qualification**")
-        for column, (outcome, count) in zip(st.columns(3), helpers.count_by(results, "icp_outcome",
-                                                                             helpers.ICP_OUTCOMES).items()):
-            column.metric(outcome, count)
-
-        st.markdown("**Campaign readiness**")
-        for column, (outcome, count) in zip(st.columns(5), helpers.count_by(results, "campaign_readiness",
-                                                                             helpers.CAMPAIGN_OUTCOMES).items()):
-            column.metric(outcome, count)
-
-        st.markdown("**Contact readiness**")
-        for column, (outcome, count) in zip(st.columns(3), helpers.count_by(results, "contact_readiness",
-                                                                             helpers.CONTACT_OUTCOMES).items()):
-            column.metric(outcome, count)
+        for heading, group, field, outcomes in (
+                ("Company ICP qualification", "icp", "icp_outcome", helpers.ICP_OUTCOMES),
+                ("Campaign readiness", "campaign", "campaign_readiness", helpers.CAMPAIGN_OUTCOMES),
+                ("Contact readiness", "contact", "contact_readiness", helpers.CONTACT_OUTCOMES)):
+            st.markdown(f"**{heading}**")
+            counts = helpers.count_by(results, field, outcomes).items()
+            for index, (column, (outcome, count)) in enumerate(zip(st.columns(len(outcomes)), counts)):
+                with column.container(key=style.card_key(group, index)):
+                    st.metric(outcome, count)
 
         # ---- Searchable, filterable table ----------------------------------------------------
         st.divider()
@@ -354,8 +437,9 @@ with tab_builder:
 
         status_counts = {status: sum(1 for r in workflow_records if drafts[r.key].status == status)
                          for status in seq.DRAFT_STATUSES}
-        for column, (status, count) in zip(st.columns(4), status_counts.items()):
-            column.metric(status, count)
+        for index, (column, (status, count)) in enumerate(zip(st.columns(4), status_counts.items())):
+            with column.container(key=style.card_key("drafts", index)):
+                st.metric(status, count)
 
         # ---- Drafts table with multi-select ---------------------------------------------------
         st.markdown(f"**Drafts** · {len(shown)} shown of {len(workflow_records)} · "

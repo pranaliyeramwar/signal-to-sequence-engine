@@ -7,3 +7,26 @@ address = "127.0.0.1"
 [browser]
 # Do not send usage statistics to Streamlit.
 gatherUsageStats = false
+
+[theme]
+# Two-colour brand theme: primary for navigation, buttons and headings; the accent is used in charts.
+base = "light"
+primaryColor = "#173B4D"
+backgroundColor = "#F5F8FA"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#243746"
+borderColor = "#DCE5EA"
+linkColor = "#173B4D"
+showWidgetBorder = true
+baseRadius = "0.75rem"
+dataframeBorderColor = "#DCE5EA"
+dataframeHeaderBackgroundColor = "#EAF3F6"
+dataframeHeaderTextColor = "#173B4D"
+metricValueFontSize = "1.9rem"
+metricValueFontWeight = 700
+showSidebarBorder = true
+
+[theme.sidebar]
+backgroundColor = "#FFFFFF"
+# Inputs in the white sidebar get the soft background so they read as fields.
+secondaryBackgroundColor = "#F5F8FA"
