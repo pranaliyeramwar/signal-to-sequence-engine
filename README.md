@@ -31,7 +31,7 @@ If **any** record in the batch is blocked, nothing is exported. The function rai
 
 - Python 3.11+ for the complete project and test suite (developed and tested on 3.15.1). The tests read `.streamlit/config.toml` with the standard-library `tomllib` module, which was added in Python 3.11.
 - **The engine, CLI and tests:** no third-party packages. Tests use the standard-library `unittest`.
-- **The web interface only:** Streamlit, listed in [`requirements.txt`](requirements.txt). Install it into a project virtual environment rather than your global Python (see below).
+- **The web interface only:** Streamlit, Altair and pandas, pinned in [`requirements.txt`](requirements.txt). Install them into a project virtual environment rather than your global Python (see below).
 
 ## Usage
 
@@ -70,7 +70,7 @@ Launch the app:
 
 It runs at <http://127.0.0.1:8501>. Stop it with `Ctrl+C`.
 
-**Localhost only.** [`.streamlit/config.toml`](.streamlit/config.toml) sets `server.address = "127.0.0.1"`, so the app listens on this computer's loopback interface and can't be reached from your network. It also turns off Streamlit usage statistics. Streamlit's XSRF and CORS protections stay at their enabled defaults. Streamlit reads this file only when launched **from the project root**. If you launch it from elsewhere, add `--server.address 127.0.0.1`. To confirm the binding, check that the startup message shows a single `http://127.0.0.1:8501` URL and no "Network URL".
+**Localhost only (local runs).** [`.streamlit/config.toml`](.streamlit/config.toml) sets `server.address = "127.0.0.1"`, so the app listens on this computer's loopback interface and can't be reached from your network. It also turns off Streamlit usage statistics. Streamlit's XSRF and CORS protections stay at their enabled defaults. Streamlit reads this file only when launched **from the project root**. If you launch it from elsewhere, add `--server.address 127.0.0.1`. To confirm the binding, check that the startup message shows a single `http://127.0.0.1:8501` URL and no "Network URL".
 
 **Sidebar:**
 
@@ -284,11 +284,51 @@ All four use the same implementation in [`ui/csv_safety.py`](ui/csv_safety.py). 
 
 - **Side effect:** a legitimate value that starts with one of these characters keeps the leading `'` when it's imported into another tool.
 
+## Deploying to Streamlit Community Cloud
+
+The app can run on Streamlit Community Cloud using only the synthetic sample dataset. It needs no secrets, API keys or external integrations.
+
+**Before deploying:**
+
+- Push the complete project to GitHub, including every module the app imports (`scoring/`, `outreach/`, `ui/`) and `data/input/sample_companies.csv`.
+- Generated output and local secrets are excluded by `.gitignore` and aren't needed.
+
+**Deployment settings:**
+
+| Setting | Value |
+|---|---|
+| Repository and branch | this repository, `main` |
+| Main file path | `streamlit_app.py` (at the repository root) |
+| Python version (Advanced settings) | **3.12**, the Community Cloud default and the version the pinned dependencies were tested on |
+| Secrets (Advanced settings) | leave empty; the app reads none |
+
+Community Cloud installs the pinned packages from `requirements.txt` and runs the app from the repository root, so it reads the same `.streamlit/config.toml` (theme included).
+
+**Dependency verification:**
+
+- The pins (`streamlit==1.66.1`, `altair==6.3.0`, `pandas==3.1.0`) were installed with uv into a clean Python 3.12 environment, and the full test suite and the headless app walkthrough passed there.
+- The pins also resolve to prebuilt Linux wheels for Python 3.12, the platform Community Cloud runs on.
+- The app itself hasn't yet been tested on Community Cloud.
+
+**Network address:** `.streamlit/config.toml` keeps `server.address = "127.0.0.1"` for local runs, and it must not be removed or changed on `main`.
+
+- Community Cloud reads this file too, and offers no way to override it before the server starts.
+- Community Cloud's health check connects to the app at `localhost:8501` inside its container, so the loopback setting may work as it is. That hasn't been confirmed yet.
+- If the deploy fails the health check (for example `connection refused` on `/healthz` in the app logs), don't edit the config on `main`. The planned fallback is a separate deploy-only branch whose config leaves out the `address` line. That branch doesn't exist yet and needs its own review, including the tests that check the localhost setting.
+
+**On Community Cloud:**
+
+- **Loading data:** click **Load sample dataset (synthetic)** in the sidebar, then **Run ICP scoring**. Every synthetic record keeps its TEST DATA and DEMO DATA labels, and the Sequencing CSV stays disabled.
+- **Uploaded files** are processed on Community Cloud's servers. Don't upload real prospect or personal data to a hosted deployment.
+- **Session state:** drafts, approvals and sender settings live in the browser session and are lost when the page is refreshed, the app restarts or the app goes to sleep after a period of inactivity.
+- **Visibility:** a deployed app can be opened by anyone with its link unless its sharing settings restrict viewers. Check those settings if the demo shouldn't be public.
+- **No sending:** the app still never sends email or contacts any service. Its only outputs are CSV downloads to the viewer's browser.
+
 ## Limitations and Scope
 
 - **Rule-based scoring.** Scoring uses deterministic, keyword-based rules (`scoring/rules.py`). It doesn't use a model or AI service, so a description that describes the company in words the keyword lists don't cover can be marked unclear or unknown.
 - **Session-only workflow.** Drafts, approvals and sender settings live in the browser session. They're never saved to disk and may be lost when the tab is refreshed or the server restarts. Download a Draft Review CSV to keep a copy.
-- **Single user, localhost only.** The app is configured to listen on `127.0.0.1` only. It has no accounts, sign-in or shared state, and isn't intended to be deployed to a server.
+- **Single user, localhost only.** Locally, the app is configured to listen on `127.0.0.1` only. It has no accounts, sign-in or shared state of its own. A Streamlit Community Cloud deployment is the one supported hosted option, and its access is controlled by Community Cloud's sharing settings, not by the app (see [Deploying to Streamlit Community Cloud](#deploying-to-streamlit-community-cloud)).
 - **Synthetic data only.** The project has been tested with synthetic data only. It hasn't been validated on real prospect data.
 - **No live data enrichment.** The engine assesses only the fields in the input CSV. It doesn't look up companies, contacts, hiring or triggers from any external source.
 - **No sending.** The application never sends email or launches campaigns. Its only outputs are CSV files.
@@ -365,7 +405,7 @@ outreach/
   sequence.py                     # drafts, approval, filters, Draft Review and Sequencing CSV exports
 streamlit_app.py                  # Streamlit web interface (three tabs)
 .streamlit/config.toml            # binds the app to 127.0.0.1; usage statistics off; brand theme
-requirements.txt                  # web interface dependency (Streamlit)
+requirements.txt                  # web interface dependencies (Streamlit, Altair, pandas), pinned
 tests/
   fixtures/expected_results.csv   # hand-derived expected outcomes
   test_sample_dataset.py          # all 25 records against the fixture
